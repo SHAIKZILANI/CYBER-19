@@ -1,0 +1,10 @@
+{
+  "name": "cyber19-browser-detector",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Controlled dynamic browser DOM XSS sink interception for CYBER-19",
+  "main": "dom-detector.js",
+  "dependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

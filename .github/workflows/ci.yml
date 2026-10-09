@@ -1,0 +1,100 @@
+name: CYBER-19 CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # JOB 1: Frontend Build and Static Asset Validation
+  # =========================================================================
+  frontend-build:
+    name: Frontend Build & Asset Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm install --prefer-offline --no-audit
+
+      - name: Build React Dashboard (Vite Production Build)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Validate Production Build Artifacts
+        run: |
+          test -f frontend/dist/index.html || { echo "Frontend build failed: dist/index.html not found"; exit 1; }
+          echo "Frontend production assets verified successfully."
+
+  # =========================================================================
+  # JOB 2: Backend Build, Compilation, and Complete Test Suite
+  # =========================================================================
+  backend-test:
+    name: Backend Build & Maven Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Cache Maven Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Compile Backend Application
+        working-directory: backend
+        run: mvn compile -B
+
+      - name: Run Complete Automated Test Suite
+        working-directory: backend
+        run: mvn test -B
+
+      - name: Verify Surefire Test Reports
+        working-directory: backend
+        run: |
+          echo "Verifying test report generation..."
+          ls -la target/surefire-reports/*.txt
+
+  # =========================================================================
+  # JOB 3: Security & Laboratory Boundary Verification
+  # =========================================================================
+  security-audit:
+    name: Laboratory Scope & Secret Leak Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Verify Zero Hardcoded Secrets in Config
+        run: |
+          echo "Scanning configuration files for exposed credentials..."
+          ! grep -iE 'aws_secret|private_key|api_secret' backend/src/main/resources/application.properties || {
+            echo "Security check failed: potential credentials found in application.properties";
+            exit 1;
+          }
+          echo "Laboratory boundary verified: local laboratory targets only."

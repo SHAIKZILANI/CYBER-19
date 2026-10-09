@@ -1,0 +1,95 @@
+# ==============================================================================
+# CYBER-19 Local Vulnerability Laboratory Orchestration
+# docker-compose.lab.yml
+#
+# Isolated, reproducible, multi-target testing environment for CYBER-19 platform:
+# - OWASP Juice Shop -> Port 3000 (Target 1: Modern Single-Page Node/Angular App)
+# - OWASP WebGoat   -> Port 8084 (Target 2: Enterprise Java/Spring App - mapped to 8084 to avoid ZAP conflict)
+# - DVWA             -> Port 8082 (Target 3: Classic PHP/MySQL LAMP Application)
+# - OWASP ZAP        -> Port 8080 (Independent Comparative Benchmark Engine)
+#
+# Safety Principles:
+# 1. All host ports bound strictly to 127.0.0.1 loopback interface.
+# 2. Containers isolated inside user-defined bridge network (cyber19-lab-net).
+# 3. Built-in health checks verify service readiness before scanning.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. OWASP ZAP Comparative Benchmark Scanner (Port 8080)
+  # ----------------------------------------------------------------------------
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    command: zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - cyber19-lab-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --output /dev/null --fail http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # 2. OWASP Juice Shop Vulnerable Target (Port 3000)
+  # ----------------------------------------------------------------------------
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=unsafe
+    networks:
+      - cyber19-lab-net
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "const http = require('http'); http.get('http://127.0.0.1:3000/rest/admin/application-version', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # 3. OWASP WebGoat Vulnerable Target (Port 8084:8080)
+  # ----------------------------------------------------------------------------
+  webgoat:
+    image: webgoat/webgoat:latest
+    ports:
+      - "127.0.0.1:8084:8080"
+    environment:
+      - WEBGOAT_PORT=8080
+      - WEBWOLF_PORT=9090
+    networks:
+      - cyber19-lab-net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # 4. DVWA (Damn Vulnerable Web App) (Port 8082:80)
+  # ----------------------------------------------------------------------------
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    ports:
+      - "127.0.0.1:8082:80"
+    networks:
+      - cyber19-lab-net
+    healthcheck:
+      test: ["CMD-SHELL", "php -r \"file_get_contents('http://127.0.0.1/login.php') ?: exit(1);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+networks:
+  cyber19-lab-net:
+    driver: bridge
+    name: cyber19-lab-net
